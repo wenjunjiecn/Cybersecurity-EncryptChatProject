@@ -2,14 +2,11 @@ import struct
 from tkinter import *
 import time
 from tkinter import filedialog
-import RSAalgorithm
 import pickle
 import socket
 import threading
 import tkinter.messagebox
-import generateKey
-import hashalg
-import AESalgorithm
+from algorithms import AESalgorithm, generateKey, RSAalgorithm, hashalg
 from tkinter import ttk
 import json
 import os
@@ -28,7 +25,7 @@ FPORT=7932
 # CLIENTPRIVATE
 def initKey():
     global CLIENTPUBLIC, CLIENTPRIVATE
-    (CLIENTPRIVATE, CLIENTPUBLIC) = generateKey.generateMyKey("./client/client")
+    (CLIENTPRIVATE, CLIENTPUBLIC) = generateKey.generateMyKey("keys/client/client")
 
 def fileEncrypt(data):
     onceKey = AESalgorithm.genKey()
@@ -171,7 +168,7 @@ def mainPage():
         ClientSock.connect((ServerAddr, PORT))
         print('连接成功，可以开始传输消息和文件了\n')
         txtMsgList.insert(END, "连接成功，可以开始传输消息和文件了" + IP + ":" + str(PORT) + "\n")
-        exchangePublicKey("./client/clientpublic.pem")  # 发送公钥
+        exchangePublicKey("keys/client/clientpublic.pem")  # 发送公钥
         verifyKey(ClientSock)  # 验证对方密钥
         thread = threading.Thread(target=RecvMsg, args=(ClientSock, None))
         thread.start()

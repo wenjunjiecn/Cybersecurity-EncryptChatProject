@@ -1,7 +1,7 @@
 import socket
 import threading
 import pickle
-import RSAalgorithm
+from algorithms import RSAalgorithm
 
 HOSTIP='127.0.0.1'
 PORT = 4396

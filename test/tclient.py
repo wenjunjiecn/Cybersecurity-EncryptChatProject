@@ -1,7 +1,7 @@
 import socket
 import threading
 import pickle
-import RSAalgorithm
+from algorithms import RSAalgorithm
 
 PORT = 4396
 BUFF = 1024

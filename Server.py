@@ -3,14 +3,11 @@ import struct
 from tkinter import *
 import time
 from tkinter import filedialog
-import RSAalgorithm
 import pickle
 import socket
 import threading
 import tkinter.messagebox
-import generateKey
-import hashalg
-import AESalgorithm
+from algorithms import AESalgorithm, generateKey, RSAalgorithm, hashalg
 import json
 
 # 使用tkinter建立GUI
@@ -27,18 +24,18 @@ FPORT=7932
 # SERVERPRIVATEs
 def initKey():
     global SERVERPUBLICs, SERVERPRIVATEs
-    (SERVERPRIVATEs, SERVERPUBLICs) = generateKey.generateMyKey("./server/server")
+    (SERVERPRIVATEs, SERVERPUBLICs) = generateKey.generateMyKey("keys/server/server")
 
 def fileDecrypt(data):
     (message,encrykey)=pickle.loads(data)
-    onceKey=RSAalgorithm.RsaDecrypt(encrykey, SERVERPRIVATEs)
+    onceKey= RSAalgorithm.RsaDecrypt(encrykey, SERVERPRIVATEs)
     print("接收到的密钥",onceKey,type(onceKey))
-    message=AESalgorithm.AesDecrypt(message,onceKey.decode('unicode_escape'))
+    message= AESalgorithm.AesDecrypt(message, onceKey.decode('unicode_escape'))
     message=pickle.loads(message)
     content=base64.b64decode(message['Message'])
     print('传送的内容是',content)
     digest=message['digest']
-    if RSAalgorithm.VerRsaSignal(content,digest,CLIENTPUBLICs):
+    if RSAalgorithm.VerRsaSignal(content, digest, CLIENTPUBLICs):
         return content
 
 def initFileListen():
@@ -203,7 +200,7 @@ def mainPage():
         ConSock, addr = ServerSock.accept()
         print('连接成功')
         txtMsgList.insert(END, "系统消息：连接成功\n")
-        exchangePublicKey("./server/serverpublic.pem")
+        exchangePublicKey("keys/server/serverpublic.pem")
         verifyKey(ConSock)
         thread_rev = threading.Thread(target=RecvMsg, args=(ConSock, None))
         thread_rev.start()
