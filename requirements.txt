@@ -1,0 +1,4 @@
+pycryptodome==3.23.0
+# tkinter is required but is a system-level dependency.
+# On macOS/Windows, it's usually included with Python.
+# On Linux, install via package manager (e.g., apt-get install python3-tk).

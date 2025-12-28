@@ -1,2 +1,8 @@
 /venv/
 /venv1/
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+keys/
+
