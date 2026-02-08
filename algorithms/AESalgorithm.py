@@ -1,57 +1,83 @@
+"""AES-CBC helper functions used by the chat application.
+
+This module keeps backward-compatible function names while improving
+input validation, typing clarity and cryptographic hygiene.
+"""
+
+from __future__ import annotations
+
 import base64
-from Crypto.Cipher import AES
-import random
+import secrets
 import string
+from typing import Union
 
-# 采用AES对称加密算法,CBC
+from Crypto.Cipher import AES
 
-
-iv=b'0000100010010010'
-# str不是16的倍数那就补足为16的倍数
-def add_to_16(value):
-    if isinstance(value,bytes):
-        value.decode()
-    while len(value) % 16 != 0:
-        value += '\0'
-    return str.encode(value)  # 返回bytes
-#加密方法
-def AesEncrypt(data,key):
-    if isinstance(data,bytes):
-        text=base64.b64encode(data).decode('ascii')
-    else:
-        text = base64.b64encode(data.encode('utf-8')).decode('ascii')
-    # 初始化加密器
-    aes = AES.new(add_to_16(key), AES.MODE_CBC,IV=iv)
-    #先进行aes加密
-    encrypt_aes = aes.encrypt(add_to_16(text))
-    #用base64转成字符串形式
-    encrypted_text = str(base64.encodebytes(encrypt_aes), encoding='utf-8')  # 执行加密并转码返回bytes
-    return encrypted_text
-#解密方法
-def AesDecrypt(text,key):
-    # 初始化加密器
-    aes = AES.new(add_to_16(key), AES.MODE_CBC,IV=iv)
-    #优先逆向解密base64成bytes
-    if isinstance(text,str):
-        base64_decrypted = base64.decodebytes(text.encode(encoding='utf-8'))
-    else:
-        base64_decrypted=base64.decodebytes(text)
-    decrypted_text = str(aes.decrypt(base64_decrypted),encoding='utf-8') # 执行解密密并转码返回str
-    decrypted_text = base64.b64decode(decrypted_text.encode('utf-8'))\
-        # .decode('utf-8')
-    return decrypted_text
+# Historical fixed IV kept for protocol compatibility between existing clients.
+iv = b"0000100010010010"
 
 
-def genKey():
-    source=string.ascii_letters+string.digits
-    key="".join(random.sample(source,16))
-    return key
+BytesLike = Union[bytes, bytearray]
 
-if __name__ == '__main__':
-    text='你好你好'
-    mykey=genKey()
-    print("加密密钥是"+mykey)
-    e=AesEncrypt(text,mykey)
-    d=AesDecrypt(e,mykey)
-    print(e)
-    print(d)
+
+def _ensure_bytes(value: Union[str, BytesLike]) -> bytes:
+    """Convert supported payload types to bytes."""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    raise TypeError(f"Unsupported value type: {type(value)!r}")
+
+
+def add_to_16(value: Union[str, BytesLike]) -> bytes:
+    """Pad bytes with NUL to the nearest 16-byte boundary.
+
+    Kept for compatibility with the historical implementation.
+    """
+    raw = _ensure_bytes(value)
+    padding_len = (16 - (len(raw) % 16)) % 16
+    return raw + (b"\0" * padding_len)
+
+
+def AesEncrypt(data: Union[str, BytesLike], key: Union[str, BytesLike]) -> str:
+    """Encrypt data with AES-CBC and return base64 text payload."""
+    plaintext = _ensure_bytes(data)
+    encoded_plaintext = base64.b64encode(plaintext)
+
+    aes = AES.new(add_to_16(key), AES.MODE_CBC, IV=iv)
+    encrypted = aes.encrypt(add_to_16(encoded_plaintext))
+    return base64.encodebytes(encrypted).decode("utf-8")
+
+
+def AesDecrypt(text: Union[str, BytesLike], key: Union[str, BytesLike]) -> bytes:
+    """Decrypt AES-CBC payload and return original plaintext bytes."""
+    encrypted = _ensure_bytes(text)
+    decoded = base64.decodebytes(encrypted)
+
+    aes = AES.new(add_to_16(key), AES.MODE_CBC, IV=iv)
+    decrypted_padded = aes.decrypt(decoded)
+
+    # Remove NUL padding then decode the base64-wrapped original payload.
+    decrypted = decrypted_padded.rstrip(b"\0")
+    return base64.b64decode(decrypted)
+
+
+def genKey(length: int = 16) -> str:
+    """Generate a random alphanumeric key.
+
+    Defaults to 16 chars to match AES-128 key size in this project.
+    """
+    if length <= 0:
+        raise ValueError("length must be positive")
+    source = string.ascii_letters + string.digits
+    return "".join(secrets.choice(source) for _ in range(length))
+
+
+if __name__ == "__main__":
+    text = "你好你好"
+    mykey = genKey()
+    print("加密密钥是" + mykey)
+    encrypted = AesEncrypt(text, mykey)
+    decrypted = AesDecrypt(encrypted, mykey)
+    print(encrypted)
+    print(decrypted)
