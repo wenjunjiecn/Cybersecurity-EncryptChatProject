@@ -238,8 +238,8 @@ def mainPage():
                 print("连接异常，ip或端口不可访问\n")
 
         set = Toplevel()
-        set.title('设置ip地址和端口号')
-        set.geometry('350x200')
+        set.title('连接设置')
+        set.geometry('380x220')
         set.resizable(0, 0)
         
         main_frame = ttk.Frame(set, padding="20")
@@ -249,13 +249,18 @@ def mainPage():
         ttk.Label(main_frame, text='IP地址：').grid(row=0, column=0, pady=5, sticky=E)
         ent1 = ttk.Entry(main_frame)
         ent1.grid(row=0, column=1, pady=5, sticky=W)
+        ent1.insert(0, IP)
         # port
         ttk.Label(main_frame, text='端口号：').grid(row=1, column=0, pady=5, sticky=E)
         ent2 = ttk.Entry(main_frame)
         ent2.grid(row=1, column=1, pady=5, sticky=W)
+        ent2.insert(0, str(PORT))
+
+        tip_label = ttk.Label(main_frame, text='提示：修改后会自动重连服务器', foreground='#666666')
+        tip_label.grid(row=2, column=0, columnspan=2, sticky=W, pady=(8, 0))
         
         bt_connect = ttk.Button(main_frame, text='连接', command=lambda: setNewIP(ent1.get(), ent2.get()))
-        bt_connect.grid(row=2, column=0, columnspan=2, pady=20)
+        bt_connect.grid(row=3, column=0, columnspan=2, pady=20)
 
     def start():
         # 以下是生成聊天窗口的代码
@@ -266,36 +271,56 @@ def mainPage():
         # 创建窗口
         app = Tk()
         app.title('Client - EncryptChat')
-        app.geometry('700x550')
+        app.geometry('860x620')
         # app.resizable(0, 0)
 
         import tkinter.ttk as ttk
         style = ttk.Style()
         style.theme_use('clam')
+        style.configure('TButton', padding=(10, 5), font=('Arial', 10))
+        style.configure('TLabel', font=('Arial', 10))
+        style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
 
         # Main Layout
         app.columnconfigure(0, weight=1)
         app.rowconfigure(0, weight=1)
 
-        main_frame = ttk.Frame(app, padding="10")
+        main_frame = ttk.Frame(app, padding="14")
         main_frame.grid(row=0, column=0, sticky="nsew")
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(0, weight=3) # Message list
         main_frame.rowconfigure(1, weight=1) # Input
         main_frame.rowconfigure(2, weight=0) # Controls
+
+        title_frame = ttk.Frame(main_frame)
+        title_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(title_frame, text='🔐 EncryptChat 安全通信客户端', style='Header.TLabel').pack(side=LEFT)
+        status_var = StringVar(value=f"服务器: {IP}:{PORT}")
+        ttk.Label(title_frame, textvariable=status_var, foreground='#555555').pack(side=RIGHT)
         
         # Message List Area
         frmLT = ttk.Frame(main_frame)
-        frmLT.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
+        frmLT.grid(row=0, column=0, sticky="nsew", pady=(36, 10))
         frmLT.columnconfigure(0, weight=1)
         frmLT.rowconfigure(0, weight=1)
 
         scrollbar = ttk.Scrollbar(frmLT)
         scrollbar.grid(row=0, column=1, sticky="ns")
 
-        txtMsgList = Text(frmLT, font=('Arial', 12), yscrollcommand=scrollbar.set, highlightthickness=1, borderwidth=1, relief="solid")
+        txtMsgList = Text(
+            frmLT,
+            font=('Consolas', 11),
+            yscrollcommand=scrollbar.set,
+            highlightthickness=1,
+            borderwidth=1,
+            relief="solid",
+            padx=8,
+            pady=8,
+            background='#fbfbfd'
+        )
         txtMsgList.grid(row=0, column=0, sticky="nsew")
         scrollbar.config(command=txtMsgList.yview)
+        txtMsgList.config(state=DISABLED)
         
         txtMsgList.tag_config('greencolor', foreground='#008C00', font=('Arial', 10, 'bold'))  # 创建tag
 
@@ -305,9 +330,19 @@ def mainPage():
         frmLC.columnconfigure(0, weight=1)
         frmLC.rowconfigure(0, weight=1)
         
-        txtMsg = Text(frmLC, height=5, font=('Arial', 12), highlightthickness=1, borderwidth=1, relief="solid")
+        txtMsg = Text(
+            frmLC,
+            height=6,
+            font=('Arial', 11),
+            highlightthickness=1,
+            borderwidth=1,
+            relief="solid",
+            padx=8,
+            pady=8
+        )
         txtMsg.grid(row=0, column=0, sticky="nsew")
         txtMsg.bind("<KeyPress-Up>", lambda event: sendMsgEvent(event, ClientSocket))
+        txtMsg.bind("<Control-Return>", lambda event: sendMsgEvent(type('event', (), {'keysym': 'Up'})(), ClientSocket))
 
         # Controls Area
         frmLB = ttk.Frame(main_frame)
@@ -316,8 +351,8 @@ def mainPage():
         selal = StringVar()
         btnSend = ttk.Button(frmLB, text='发送 (Up)', width=10, command=lambda: sendMsg(ClientSocket))
         btnCancel = ttk.Button(frmLB, text='清空', width=8, command=cancelMsg)
-        btnFile = ttk.Button(frmLB, text='上次文件', width=10, command=UploadAction)
-        btnSet = ttk.Button(frmLB, text='设置ip', width=8, command=setIpWindows)
+        btnFile = ttk.Button(frmLB, text='上传文件', width=10, command=UploadAction)
+        btnSet = ttk.Button(frmLB, text='连接设置', width=10, command=setIpWindows)
         btnAlSel = ttk.Combobox(frmLB, textvariable=selal, state='readonly', width=15)
         btnAlSel['values'] = ('AES-CBC-一次一密', '待定2')
         btnAlSel.current(0)
@@ -331,9 +366,20 @@ def mainPage():
         btnFile.pack(side=RIGHT, padx=5)
         btnSet.pack(side=RIGHT, padx=5)
         
+        ttk.Label(main_frame, text='快捷键：↑ 发送消息，Ctrl+Enter 快速发送').grid(row=3, column=0, sticky=W, pady=(8, 0))
+
         # Monkey patch insert to be thread safe
         orig_insert = txtMsgList.insert
-        txtMsgList.insert = lambda *a: app.after(0, lambda: orig_insert(*a))
+
+        def thread_safe_insert(*a):
+            def do_insert():
+                txtMsgList.config(state=NORMAL)
+                orig_insert(*a)
+                txtMsgList.see(END)
+                txtMsgList.config(state=DISABLED)
+            app.after(0, do_insert)
+
+        txtMsgList.insert = thread_safe_insert
 
         gui_ready.set()
         
