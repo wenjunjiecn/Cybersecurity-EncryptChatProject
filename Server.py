@@ -9,6 +9,7 @@ import threading
 import tkinter.messagebox
 from algorithms import AESalgorithm, generateKey, RSAalgorithm, hashalg
 import json
+import os
 
 # 使用tkinter建立GUI
 
@@ -17,6 +18,8 @@ PORT = 4396
 BUFF = 5120
 FIP='127.0.0.1'
 FPORT=7932
+CLIENT_FILE_PORT = 7933
+FILE_TARGET_IP = '127.0.0.1'
 
 FPORT=7932
 ConSock = None
@@ -40,6 +43,65 @@ def fileDecrypt(data):
     digest=message['digest']
     if RSAalgorithm.VerRsaSignal(content, digest, CLIENTPUBLICs):
         return content
+
+
+def fileEncrypt(data):
+    onceKey = AESalgorithm.genKey()
+    digest = RSAalgorithm.RsaSignal(data, SERVERPRIVATEs)
+    message = {'Message': base64.b64encode(data), 'digest': digest.decode("utf-8")}
+    message = pickle.dumps(message)
+    message = AESalgorithm.AesEncrypt(message, onceKey)
+    encrykey = RSAalgorithm.RsaEncrypt(onceKey, CLIENTPUBLICs)
+    return pickle.dumps([message, encrykey.decode('utf-8')])
+
+
+def recvall(conn, length):
+    data = b''
+    while len(data) < length:
+        packet = conn.recv(length - len(data))
+        if not packet:
+            return None
+        data += packet
+    return data
+
+
+def send_packet(conn, payload):
+    conn.sendall(struct.pack('!I', len(payload)))
+    conn.sendall(payload)
+
+
+def recv_packet(conn):
+    raw_len = recvall(conn, 4)
+    if not raw_len:
+        return None
+    payload_len = struct.unpack('!I', raw_len)[0]
+    return recvall(conn, payload_len)
+
+
+def initSendSocket(filepath):
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((FILE_TARGET_IP, CLIENT_FILE_PORT))
+    except socket.error as msg:
+        print(msg)
+        txtMsgList.insert(END, f'文件发送连接失败: {msg}\n', 'greencolor')
+        return
+
+    print(s.recv(10240))
+    if os.path.isfile(filepath):
+        file_meta = {
+            'filename': os.path.basename(filepath),
+            'filesize': os.stat(filepath).st_size,
+        }
+        send_packet(s, pickle.dumps(file_meta))
+        with open(filepath, 'rb') as fp:
+            while True:
+                data = fp.read(1024)
+                if not data:
+                    txtMsgList.insert(END, '{0} 文件发送完毕...\n'.format(os.path.basename(filepath)), 'greencolor')
+                    break
+                send_packet(s, fileEncrypt(data))
+    s.close()
 
 def initFileListen():
     try:
@@ -71,15 +133,13 @@ def deal_data(conn, addr):
 
     while True:
         # 申请相同大小的空间存放发送过来的文件名与文件大小信息
-        fileinfo_size = struct.calcsize('128sl')
-        # 接收文件名与文件大小信息
-        buf = conn.recv(fileinfo_size)
+        buf = recv_packet(conn)
         # 判断是否接收到文件头信息
         if buf:
             # 获取文件名和文件大小
-            filename, filesize = struct.unpack('128sl', buf)
-            fn = filename.strip(b'\00')
-            fn = fn.decode()
+            meta = pickle.loads(buf)
+            fn = meta['filename']
+            filesize = meta['filesize']
             print('file new name is {0}, filesize if {1}'.format(str(fn), filesize))
             txtMsgList.insert(END, '收到的文件名字为 {0}, 文件大小为 {1}'.format(str(fn), filesize), 'greencolor')
             recvd_size = 0  # 定义已接收文件的大小
@@ -89,21 +149,14 @@ def deal_data(conn, addr):
             txtMsgList.insert(END, '开始接受...', 'greencolor')
             # 将分批次传输的二进制流依次写入到文件
             while not recvd_size == filesize:
-                if filesize - recvd_size > 1024:
-                    lens=conn.recv(1024).decode('utf-8')
-                    lens=int(lens)
-                    print('该段发送长度为',lens)
-                    data = conn.recv(lens)
-                    data=fileDecrypt(data)
-                    recvd_size += len(data)
-                else:
-                    lens = conn.recv(1024).decode('utf-8')
-                    lens = int(lens)
-                    print('该段发送长度为', lens)
-                    data = conn.recv(lens)
-                    data = fileDecrypt(data)
-                    recvd_size = filesize
-                conn.send('I have receive the past one'.encode('utf-8'))
+                packet = recv_packet(conn)
+                if not packet:
+                    break
+                data = fileDecrypt(packet)
+                if data is None:
+                    txtMsgList.insert(END, '文件分片签名验证失败，终止接收\n', 'greencolor')
+                    break
+                recvd_size += len(data)
                 fp.write(data)
             fp.close()
             print('end receive...')
@@ -167,6 +220,8 @@ def mainPage():
     def UploadAction(event=None):
         filename = filedialog.askopenfilename()
         print('Selected:', filename)
+        if filename:
+            initSendSocket(filename)
 
     def addSysTip(mes):
         global txtMsgList
@@ -202,7 +257,7 @@ def mainPage():
                 txtMsgList.insert(END, "验证失败\n")
 
     def cnct():
-        global txtMsgList, ConSock
+        global txtMsgList, ConSock, FILE_TARGET_IP
         HOSTIP = '127.0.0.1'
         try:
             ServerSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -212,6 +267,7 @@ def mainPage():
             print("本机IP地址为", HOSTIP, "端口号为", PORT, ",正在监听中")
             txtMsgList.insert(END, "系统消息：" + "本机IP地址为" + HOSTIP + "端口号为" + str(PORT) + ",正在监听中\n")
             ConSock, addr = ServerSock.accept()
+            FILE_TARGET_IP = addr[0]
             print('连接成功')
             txtMsgList.insert(END, "系统消息：连接成功\n")
             exchangePublicKey("keys/server/serverpublic.pem")

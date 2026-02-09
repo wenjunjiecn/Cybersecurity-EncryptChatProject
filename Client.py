@@ -19,6 +19,7 @@ PORT = 4396
 BUFF = 5120
 FIP='127.0.0.1'
 FPORT=7932
+LOCAL_FILE_PORT = 7933
 
 # SERVERPUBLIC
 # CLIENTPUBLIC
@@ -42,6 +43,40 @@ def fileEncrypt(data):
     return MES
 
 
+def fileDecrypt(data):
+    (message, encrykey) = pickle.loads(data)
+    onceKey = RSAalgorithm.RsaDecrypt(encrykey, CLIENTPRIVATE)
+    message = AESalgorithm.AesDecrypt(message, onceKey.decode('unicode_escape'))
+    message = pickle.loads(message)
+    content = base64.b64decode(message['Message'])
+    digest = message['digest']
+    if RSAalgorithm.VerRsaSignal(content, digest, SERVERPUBLIC):
+        return content
+    return None
+
+
+def recvall(conn, length):
+    data = b''
+    while len(data) < length:
+        packet = conn.recv(length - len(data))
+        if not packet:
+            return None
+        data += packet
+    return data
+
+
+def send_packet(conn, payload):
+    conn.sendall(struct.pack('!I', len(payload)))
+    conn.sendall(payload)
+
+
+def recv_packet(conn):
+    raw_len = recvall(conn, 4)
+    if not raw_len:
+        return None
+    payload_len = struct.unpack('!I', raw_len)[0]
+    return recvall(conn, payload_len)
+
 
 
 
@@ -58,12 +93,11 @@ def initSendSocket(filepath):
 
     # 判断是否为文件
     if os.path.isfile(filepath):
-        # 定义定义文件信息。128s表示文件名为128bytes长，l表示一个int或log文件类型，在此为文件大小
-        fileinfo_size = struct.calcsize('128sl')
-        # 定义文件头信息，包含文件名和文件大小
-        fhead = struct.pack('128sl', os.path.basename(filepath).encode('utf-8'), os.stat(filepath).st_size)
-        # 发送文件名称与文件大小
-        s.send(fhead)
+        file_meta = {
+            'filename': os.path.basename(filepath),
+            'filesize': os.stat(filepath).st_size,
+        }
+        send_packet(s, pickle.dumps(file_meta))
 
         # 将传输文件以二进制的形式分多次上传至服务器
         fp = open(filepath, 'rb')
@@ -77,15 +111,55 @@ def initSendSocket(filepath):
                 break
             print("发送的内容",data)
             tosend=fileEncrypt(data)
-            s.send(str(len(tosend)).encode('utf-8'))
-            s.send(tosend)
-            while True:
-                if s.recv(1024).decode('utf-8')=='I have receive the past one':
-                    break
+            send_packet(s, tosend)
 
 
         # 关闭当期的套接字对象
         s.close()
+
+
+def initFileListen():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(('0.0.0.0', LOCAL_FILE_PORT))
+        s.listen(10)
+    except socket.error as msg:
+        print(msg)
+        return
+
+    while True:
+        conn, addr = s.accept()
+        t = threading.Thread(target=deal_file_data, args=(conn, addr), daemon=True)
+        t.start()
+
+
+def deal_file_data(conn, addr):
+    try:
+        txtMsgList.insert(END, f'文件系统收到一个新的连接，地址来自 {addr}\n', 'greencolor')
+        conn.send('你好,连接建立成功了'.encode('utf-8'))
+        meta_payload = recv_packet(conn)
+        if not meta_payload:
+            return
+        meta = pickle.loads(meta_payload)
+        fn = meta['filename']
+        filesize = meta['filesize']
+        txtMsgList.insert(END, f'收到的文件名字为 {fn}, 文件大小为 {filesize}\n', 'greencolor')
+        recvd_size = 0
+        with open('./' + str(fn), 'wb') as fp:
+            while recvd_size < filesize:
+                packet = recv_packet(conn)
+                if not packet:
+                    break
+                data = fileDecrypt(packet)
+                if data is None:
+                    txtMsgList.insert(END, '文件分片签名验证失败，终止接收\n', 'greencolor')
+                    break
+                fp.write(data)
+                recvd_size += len(data)
+        txtMsgList.insert(END, '接收完毕...\n', 'greencolor')
+    finally:
+        conn.close()
 
 
 
@@ -148,7 +222,8 @@ def mainPage():
     def UploadAction(event=None):  # 上传文件
         filename = filedialog.askopenfilename()
         print('Selected:', filename)
-        initSendSocket(filename)
+        if filename:
+            initSendSocket(filename)
 
     def exchangePublicKey(dir):
         global ClientSock, txtMsgList
@@ -229,6 +304,8 @@ def mainPage():
             IP = str(newip)
             global PORT
             PORT = int(newport)
+            global FIP
+            FIP = str(newip)
             set.destroy()
             try:
                 cnct()
@@ -410,6 +487,8 @@ def mainPage():
 
 def main():
     initKey()
+    thread_file = threading.Thread(target=initFileListen, daemon=True)
+    thread_file.start()
     mainPage()
 
 
